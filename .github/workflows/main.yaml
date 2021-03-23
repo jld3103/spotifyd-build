@@ -1,0 +1,44 @@
+name: Main
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  build:
+    name: Build spotifyd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Checkout spotifyd
+        id: checkout_spotifyd
+        run: |
+          git clone https://github.com/Spotifyd/spotifyd.git
+          cd spotifyd
+          version=$(git describe --tags --abbrev=0 $(git rev-list --tags --max-count=1))
+          echo ::set-output name=version::$version
+          git checkout $version -b latest
+      - name: Create release
+        continue-on-error: true
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.checkout_spotifyd.outputs.version }}
+          release_name: spotifyd ${{ steps.checkout_spotifyd.outputs.version }}
+      - name: Build spotifyd
+        run: cd spotifyd && cargo build --release --locked --features alsa_backend,pulseaudio_backend,rodio_backend,dbus_mpris
+      - name: Get real asset path
+        id: get_real_asset_path
+        run: echo ::set-output name=real_path::$(readlink -f spotifyd/target/release/spotifyd)
+      - name: Upload asset
+        uses: softprops/action-gh-release@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.checkout_spotifyd.outputs.version }}
+          name: spotifyd ${{ steps.checkout_spotifyd.outputs.version }}
+          files: ${{ steps.get_real_asset_path.outputs.real_path }}
